@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 const eventBits = unix.FILE_MODIFIED | unix.FILE_ATTRIB | unix.FILE_NOFOLLOW
@@ -121,7 +122,12 @@ func (w *Watcher) Remove(name string) error {
 	stat, err := os.Stat(name)
 	switch {
 	case err != nil:
-		return err
+		// We've already established that this path is watched.
+		// Stat has failed, presumably because it's already gone
+		// Just clean up. Ignore the error we might get that
+		// the file is not associated.
+		_ = w.port.DissociatePath(name)
+		return nil
 	case stat.IsDir():
 		return w.handleDirectory(name, stat, w.dissociateFile)
 	default:
@@ -136,6 +142,8 @@ func (w *Watcher) readEvents() {
 	defer close(w.Errors)
 	defer close(w.Events)
 
+	time.Sleep(0 * time.Millisecond)
+	//time.Sleep(1000 * time.Millisecond)
 	pevents := make([]unix.PortEvent, 8, 8)
 	for {
 		count, err := w.port.Get(pevents, 1, nil)
@@ -337,6 +345,11 @@ func (w *Watcher) associateFile(path string, stat os.FileInfo) error {
 }
 
 func (w *Watcher) dissociateFile(path string, stat os.FileInfo) error {
+	if w.isClosed() {
+		return errors.New("FEN watcher already closed")
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if !w.port.PathIsWatched(path) {
 		return nil
 	}

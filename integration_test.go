@@ -18,11 +18,14 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+        "github.com/stretchr/testify/assert"
+
 )
 
 const (
-	eventSeparator = 50 * time.Millisecond
-	waitForEvents  = 500 * time.Millisecond
+	eventSeparator = 5 * time.Millisecond
+	waitForEvents  = 50 * time.Millisecond
 )
 
 // An atomic counter
@@ -1253,5 +1256,35 @@ func testRename(file1, file2 string) error {
 	default:
 		cmd := exec.Command("mv", file1, file2)
 		return cmd.Run()
+	}
+}
+
+func TestEventsPilingUp(t *testing.T) {
+	// Create directory to watch
+	testDir := tempMkdir(t)
+	defer os.RemoveAll(testDir)
+
+	watcher := newWatcher(t)
+	defer watcher.Close()
+
+	for i := 1; i < 100; i++ {
+		// Create a file before watching directory
+		testFile := filepath.Join(testDir, "TestEventsPilingUp.testfile")
+		{
+			var f *os.File
+			f, err := os.OpenFile(testFile, os.O_WRONLY|os.O_CREATE, 0666)
+			if err != nil {
+				t.Fatalf("creating test file failed: %s", err)
+			}
+			f.Sync()
+			f.Close()
+		}
+		addWatch(t, watcher, testFile)
+		err := os.Remove(testFile)
+		assert.Nil(t, err)
+		err = watcher.Remove(testFile)
+		assert.Nil(t, err)
+		//err = watcher.Remove(testFile)
+		//assert.Nil(t, err)
 	}
 }
